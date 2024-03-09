@@ -15,17 +15,12 @@ variable "xcode_version" {
   type = string
 }
 
-variable "android_sdk_tools_version" {
-  type    = string
-  default = "11076708" # https://developer.android.com/studio/#command-tools
-}
-
 source "tart-cli" "tart" {
   vm_base_name = "${var.macos_version}-base"
   vm_name      = "${var.macos_version}-xcode:${var.xcode_version}"
   cpu_count    = 4
   memory_gb    = 8
-  disk_size_gb = 90
+  disk_size_gb = 100
   headless     = true
   ssh_password = "admin"
   ssh_username = "admin"
@@ -51,24 +46,6 @@ build {
     script = "scripts/install-actions-runner.sh"
   }
 
-  provisioner "shell" {
-    inline = [
-      "source ~/.zprofile",
-      "brew install homebrew/cask-versions/temurin17",
-      "echo 'export ANDROID_HOME=$HOME/android-sdk' >> ~/.zprofile",
-      "echo 'export ANDROID_SDK_ROOT=$ANDROID_HOME' >> ~/.zprofile",
-      "echo 'export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator' >> ~/.zprofile",
-      "source ~/.zprofile",
-      "wget -q https://dl.google.com/android/repository/commandlinetools-mac-${var.android_sdk_tools_version}_latest.zip -O android-sdk-tools.zip",
-      "mkdir -p $ANDROID_HOME/cmdline-tools/",
-      "unzip -q android-sdk-tools.zip -d $ANDROID_HOME/cmdline-tools/",
-      "rm android-sdk-tools.zip",
-      "mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest",
-      "yes | sdkmanager --licenses",
-      "yes | sdkmanager 'platform-tools' 'platforms;android-33' 'build-tools;34.0.0' 'ndk;25.2.9519653'"
-    ]
-  }
-
   provisioner "file" {
     source      = pathexpand("~/Downloads/Xcode_${var.xcode_version}.xip")
     destination = "/Users/admin/Downloads/Xcode_${var.xcode_version}.xip"
@@ -81,31 +58,28 @@ build {
       "brew install xcodesorg/made/xcodes",
       "xcodes version",
       "xcodes install ${var.xcode_version} --experimental-unxip --path /Users/admin/Downloads/Xcode_${var.xcode_version}.xip --select --empty-trash",
-      "xcodebuild -downloadAllPlatforms",
+      "xcodebuild -downloadPlatform iOS",
       "xcodebuild -runFirstLaunch",
     ]
   }
+
   provisioner "shell" {
     inline = [
       "source ~/.zprofile",
-      "echo 'export FLUTTER_HOME=$HOME/flutter' >> ~/.zprofile",
-      "echo 'export PATH=$HOME/flutter:$HOME/flutter/bin/:$HOME/flutter/bin/cache/dart-sdk/bin:$PATH' >> ~/.zprofile",
-      "source ~/.zprofile",
-      "git clone https://github.com/flutter/flutter.git $FLUTTER_HOME",
-      "cd $FLUTTER_HOME",
-      "git checkout stable",
-      "flutter doctor --android-licenses",
-      "flutter doctor",
-      "flutter precache",
+      "brew install libimobiledevice ideviceinstaller ios-deploy",
+      "sudo gem update",
+      "sudo gem uninstall --ignore-dependencies ffi && sudo gem install ffi -- --enable-libffi-alloc"
     ]
   }
+
+  # install tuist and change version
   provisioner "shell" {
     inline = [
       "source ~/.zprofile",
-      "brew install libimobiledevice ideviceinstaller ios-deploy fastlane carthage",
-      "sudo gem update",
-      "sudo gem install cocoapods",
-      "sudo gem uninstall --ignore-dependencies ffi && sudo gem install ffi -- --enable-libffi-alloc"
+      "curl -Ls https://install.tuist.io | zsh",
+      "tuist install 3.18.0",
+      "tuist local 3.18.0",
+      "tuist version"
     ]
   }
 
@@ -131,13 +105,6 @@ build {
       "sudo add-certificate AppleWWDRCAG3.cer",
       "sudo add-certificate DeveloperIDG2CA.cer",
       "rm add-certificate* *.cer"
-    ]
-  }
-
-  provisioner "shell" {
-    inline = [
-      "source ~/.zprofile",
-      "flutter doctor"
     ]
   }
 }

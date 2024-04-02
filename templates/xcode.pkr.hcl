@@ -12,15 +12,25 @@ variable "macos_version" {
 }
 
 variable "xcode_version" {
+  type = list(string)
+}
+
+variable "tag" {
   type = string
+  default = ""
+}
+
+variable "disk_size" {
+  type = number
+  default = 90
 }
 
 source "tart-cli" "tart" {
   vm_base_name = "ghcr.io/cirruslabs/macos-${var.macos_version}-base:latest"
-  vm_name      = "${var.macos_version}-xcode:${var.xcode_version}"
+  vm_name      = "${var.macos_version}-xcode:${var.tag != "" ? var.tag : var.xcode_version[-1]}"
   cpu_count    = 4
   memory_gb    = 8
-  disk_size_gb = 100
+  disk_size_gb = var.disk_size
   headless     = true
   ssh_password = "admin"
   ssh_username = "admin"
@@ -46,19 +56,26 @@ build {
     script = "scripts/install-actions-runner.sh"
   }
 
-  provisioner "file" {
-    source      = pathexpand("~/Downloads/Xcode_${var.xcode_version}.xip")
-    destination = "/Users/admin/Downloads/Xcode_${var.xcode_version}.xip"
-  }
 
   provisioner "shell" {
     inline = [
       "source ~/.zprofile",
       "brew install xcodesorg/made/xcodes",
       "xcodes version",
-      "xcodes install ${var.xcode_version} --experimental-unxip --path /Users/admin/Downloads/Xcode_${var.xcode_version}.xip --select --empty-trash",
-      "xcodebuild -downloadPlatform iOS",
-      "xcodebuild -runFirstLaunch",
+    ]
+  }
+
+  provisioner "file" {
+    sources      = [ for version in var.xcode_version : pathexpand("~/XcodesCache/Xcode_${version}.xip")]
+    destination = "/Users/admin/Downloads/"
+  }
+
+  // iterate over all Xcode versions and install them
+  // select the latest one as the default
+  provisioner "shell" {
+    inline = [
+      for version in var.xcode_version :
+      "source ~/.zprofile && xcodes install ${version} --experimental-unxip --path /Users/admin/Downloads/Xcode_${version}.xip --select --empty-trash && xcodebuild -downloadAllPlatforms && xcodebuild -runFirstLaunch"
     ]
   }
 
@@ -76,8 +93,8 @@ build {
     inline = [
       "source ~/.zprofile",
       "curl -Ls https://install.tuist.io | zsh",
-      "tuist install 3.18.0",
-      "tuist local 3.18.0",
+      "tuist install 3.14.0",
+      "tuist local 3.14.0",
       "tuist version"
     ]
   }
@@ -103,6 +120,16 @@ build {
       "sudo ./add-certificate AppleWWDRCAG3.cer",
       "sudo ./add-certificate DeveloperIDG2CA.cer",
       "rm add-certificate* *.cer"
+    ]
+  }
+
+  // check there is at least 20GB of free space and fail if not
+  provisioner "shell" {
+    inline = [
+      "source ~/.zprofile",
+      "df -h",
+      "export FREE_MB=$(df -m | awk '{print $4}' | head -n 2 | tail -n 1)",
+      "[[ $FREE_MB -gt 20000 ]] && echo OK || exit 1"
     ]
   }
 }
